@@ -10,8 +10,11 @@ function reachDayVote(seed = 12): GameState {
   const wolves = state.players.filter((player) => player.role === "werewolf");
   const villager = state.players.find((player) => player.role === "villager")!;
   wolves.forEach((wolf) => {
-    state = command(state, "wolf.propose", wolf.seatId, { targetSeatId: villager.seatId, message: "测试提议" });
+      state = command(state, "wolf.propose", wolf.seatId, { targetSeatId: villager.seatId, message: "测试提议" });
   });
+  const guard = state.players.find((player) => player.role === "guard")!;
+  const protectedTarget = state.players.find((player) => player.role === "villager" && player.seatId !== villager.seatId)!;
+  state = command(state, "guard.protect", guard.seatId, { targetSeatId: protectedTarget.seatId });
   const seer = state.players.find((player) => player.role === "seer");
   if (seer?.status === "alive") {
     state = command(state, "seer.inspect", seer.seatId, { targetSeatId: villager.seatId });
@@ -28,14 +31,17 @@ function reachDayVote(seed = 12): GameState {
 }
 
 describe("deterministic werewolf engine", () => {
-  it("deals the classic eight-player role set reproducibly", () => {
+  it("deals the classic twelve-player role set reproducibly", () => {
     const first = createGame({ gameId: "a", seed: 7 });
     const second = createGame({ gameId: "b", seed: 7 });
     expect(first.players.map((player) => player.role)).toEqual(second.players.map((player) => player.role));
-    expect(first.players.filter((player) => player.role === "werewolf")).toHaveLength(2);
+    expect(first.players).toHaveLength(12);
+    expect(first.players.filter((player) => player.role === "werewolf")).toHaveLength(4);
     expect(first.players.filter((player) => player.role === "seer")).toHaveLength(1);
     expect(first.players.filter((player) => player.role === "witch")).toHaveLength(1);
     expect(first.players.filter((player) => player.role === "hunter")).toHaveLength(1);
+    expect(first.players.filter((player) => player.role === "guard")).toHaveLength(1);
+    expect(first.players.filter((player) => player.role === "villager")).toHaveLength(4);
   });
 
   it("resolves a unanimous wolf proposal and keeps the target hidden from villagers", () => {
@@ -45,12 +51,43 @@ describe("deterministic werewolf engine", () => {
     wolves.forEach((wolf) => {
       state = command(state, "wolf.propose", wolf.seatId, { targetSeatId: target.seatId, message: "只给狼队看的话" });
     });
-    expect(state.phase).toBe("seer_action");
+    expect(state.phase).toBe("guard_action");
     const villageSeat = state.players.find((player) => player.faction === "village")!.seatId;
     const villageView = toPublicState(state, villageSeat);
     expect(villageView.events.some((event) => event.type === "wolf.proposal")).toBe(false);
     const wolfView = toPublicState(state, wolves[0]!.seatId);
     expect(wolfView.events.some((event) => event.type === "wolf.proposal")).toBe(true);
+  });
+
+  it("uses the numerically smallest wolf seat when four proposals disagree", () => {
+    let state = createGame({ gameId: "wolf-priority-test", seed: 31 });
+    const wolves = state.players.filter((player) => player.role === "werewolf").toSorted((left, right) => Number(left.seatId.slice(5)) - Number(right.seatId.slice(5)));
+    const targets = state.players.filter((player) => player.faction === "village");
+    wolves.forEach((wolf, index) => {
+      state = command(state, "wolf.propose", wolf.seatId, {
+        targetSeatId: index === 0 ? targets[0]!.seatId : targets[1]!.seatId,
+        message: "测试"
+      });
+    });
+    expect(state.night.wolfKillTarget).toBe(targets[0]!.seatId);
+    expect(state.events.some((event) => event.type === "wolf.proposal" && event.payload.method === "座位号优先")).toBe(true);
+  });
+
+  it("lets the guard block the resolved wolf kill", () => {
+    let state = createGame({ gameId: "guard-test", seed: 22 });
+    const wolves = state.players.filter((player) => player.role === "werewolf");
+    const target = state.players.find((player) => player.role === "villager")!;
+    const guard = state.players.find((player) => player.role === "guard")!;
+    wolves.forEach((wolf) => {
+      state = command(state, "wolf.propose", wolf.seatId, { targetSeatId: target.seatId, message: "测试" });
+    });
+    state = command(state, "guard.protect", guard.seatId, { targetSeatId: target.seatId });
+    const seer = state.players.find((player) => player.role === "seer")!;
+    state = command(state, "seer.inspect", seer.seatId, { targetSeatId: target.seatId });
+    const witch = state.players.find((player) => player.role === "witch")!;
+    state = command(state, "witch.resolve", witch.seatId, { save: false, poisonTargetSeatId: null });
+    expect(state.phase).toBe("day_speech");
+    expect(getPlayer(state, target.seatId).status).toBe("alive");
   });
 
   it("does not allow a witch to self-save or use two potions in one night", () => {
@@ -60,6 +97,8 @@ describe("deterministic werewolf engine", () => {
     wolves.forEach((wolf) => {
       state = command(state, "wolf.propose", wolf.seatId, { targetSeatId: witch.seatId, message: "测试" });
     });
+    const guard = state.players.find((player) => player.role === "guard")!;
+    state = command(state, "guard.protect", guard.seatId, { targetSeatId: witch.seatId });
     const seer = state.players.find((player) => player.role === "seer");
     if (seer?.status === "alive") state = command(state, "seer.inspect", seer.seatId, { targetSeatId: witch.seatId });
     expect(() => command(state, "witch.resolve", witch.seatId, { save: true, poisonTargetSeatId: null })).toThrow("不能自救");
@@ -76,9 +115,13 @@ describe("deterministic werewolf engine", () => {
       [living[1]!.seatId, left.seatId],
       [living[2]!.seatId, left.seatId],
       [living[3]!.seatId, left.seatId],
-      [living[4]!.seatId, right.seatId],
-      [living[5]!.seatId, right.seatId],
-      [living[6]!.seatId, third.seatId]
+      [living[4]!.seatId, left.seatId],
+      [living[5]!.seatId, left.seatId],
+      [living[6]!.seatId, right.seatId],
+      [living[7]!.seatId, right.seatId],
+      [living[8]!.seatId, right.seatId],
+      [living[9]!.seatId, right.seatId],
+      [living[10]!.seatId, third.seatId]
     ]);
     living.forEach((player) => {
       state = command(state, "vote.cast", player.seatId, { targetSeatId: assignments.get(player.seatId) });
@@ -92,6 +135,11 @@ describe("deterministic werewolf engine", () => {
     const projection = toPublicState(state, "seat-1");
     expect(projection.players.every((player) => !("role" in player))).toBe(true);
     expect(projection.human.seatId).toBe("seat-1");
-    expect(projection.human.availableActions).toEqual(getPlayer(state, "seat-1").role === "werewolf" ? ["wolf.propose"] : []);
+    const expectedAction = getPlayer(state, "seat-1").role === "werewolf"
+      ? ["wolf.propose"]
+      : getPlayer(state, "seat-1").role === "guard"
+        ? ["guard.protect"]
+        : [];
+    expect(projection.human.availableActions).toEqual(expectedAction);
   });
 });

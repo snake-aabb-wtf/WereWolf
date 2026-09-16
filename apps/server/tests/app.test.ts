@@ -26,6 +26,7 @@ describe("werewolf HTTP API", () => {
     expect(created.statusCode).toBe(201);
     const body = created.json() as { gameId: string; playerToken: string; state: Record<string, unknown> };
     expect(body.playerToken).toBeTruthy();
+    expect((body.state.players as unknown[]).length).toBe(12);
     expect(body.state).not.toHaveProperty("seed");
     expect(JSON.stringify(body.state.events)).not.toContain('"seed"');
 

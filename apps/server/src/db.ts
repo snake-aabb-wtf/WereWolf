@@ -90,7 +90,10 @@ export class GameRepository {
   loadGame(gameId: string): GameState | undefined {
     const row = this.db.prepare("SELECT state_json FROM games WHERE id = ?").get(gameId) as unknown as { state_json?: string } | undefined;
     if (!row?.state_json) return undefined;
-    return JSON.parse(row.state_json) as GameState;
+    const state = JSON.parse(row.state_json) as GameState;
+    // Snapshots created before the guard phase was introduced can still be read safely.
+    state.night.guardResolved ??= false;
+    return state;
   }
 
   createSession(gameId: string, seatId: string): string {

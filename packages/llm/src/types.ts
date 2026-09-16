@@ -1,6 +1,6 @@
 import type { GameEvent, Phase, Role } from "@werewolf/domain";
 
-export type AgentKind = "wolf" | "seer" | "witch" | "villager" | "hunter";
+export type AgentKind = "wolf" | "seer" | "witch" | "villager" | "hunter" | "guard";
 
 export interface AgentContext {
   gameId: string;
@@ -18,7 +18,7 @@ export interface AgentContext {
 }
 
 export interface AgentAction {
-  type: "wolf.propose" | "seer.inspect" | "witch.resolve" | "hunter.shoot";
+  type: "wolf.propose" | "guard.protect" | "seer.inspect" | "witch.resolve" | "hunter.shoot";
   targetSeatId?: string | null;
   save?: boolean;
   poisonTargetSeatId?: string | null;

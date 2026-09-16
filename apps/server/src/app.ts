@@ -5,6 +5,7 @@ import { GameManager } from "./game-manager.js";
 
 const COMMAND_TYPES = [
   "wolf.propose",
+  "guard.protect",
   "seer.inspect",
   "witch.resolve",
   "speech.submit",

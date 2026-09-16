@@ -14,7 +14,7 @@ import type {
   WolfProposal
 } from "./types.js";
 
-const PLAYER_NAMES = ["你", "阿岚", "白榆", "赤羽", "冬青", "弥生", "南星", "青禾"];
+const PLAYER_NAMES = ["你", "阿岚", "白榆", "赤羽", "冬青", "弥生", "南星", "青禾", "临川", "桑榆", "砚秋", "星野"];
 const PERSONALITIES = [
   "冷静的统计派，喜欢用投票和存活率说话。",
   "直觉敏锐但表达克制，习惯先听完所有人。",
@@ -22,14 +22,22 @@ const PERSONALITIES = [
   "谨慎的调停者，倾向寻找最小风险的方案。",
   "强势的领袖型玩家，喜欢推动明确的票型。",
   "善于讲故事的观察者，关注每个人的语气变化。",
-  "不安牌的逆向思考者，常常质疑最明显的答案。"
+  "不安牌的逆向思考者，常常质疑最明显的答案。",
+  "话少而精准，喜欢在关键时刻追问细节。",
+  "擅长记忆发言顺序，会把前后矛盾连成线索。",
+  "乐观的协调者，倾向给每个人一次解释机会。",
+  "风险敏感型玩家，遇到模糊信息会先保守处理。"
 ];
 const ROLES: Role[] = [
+  "werewolf",
+  "werewolf",
   "werewolf",
   "werewolf",
   "seer",
   "witch",
   "hunter",
+  "guard",
+  "villager",
   "villager",
   "villager",
   "villager"
@@ -96,6 +104,9 @@ export function applyCommand(state: GameState, command: Command): GameState {
     case "wolf.propose":
       applyWolfProposal(next, command.actorSeatId, command.payload);
       break;
+    case "guard.protect":
+      applyGuardProtect(next, command.actorSeatId, command.payload.targetSeatId);
+      break;
     case "seer.inspect":
       applySeerInspect(next, command.actorSeatId, command.payload.targetSeatId);
       break;
@@ -140,6 +151,10 @@ export function getPendingActors(state: GameState): string[] {
   if (state.phase === "seer_action") {
     const seer = state.players.find((player) => player.role === "seer" && player.status === "alive");
     return seer && !state.night.seerTarget ? [seer.seatId] : [];
+  }
+  if (state.phase === "guard_action") {
+    const guard = state.players.find((player) => player.role === "guard" && player.status === "alive");
+    return guard && !state.night.guardResolved ? [guard.seatId] : [];
   }
   if (state.phase === "witch_action") {
     const witch = state.players.find((player) => player.role === "witch" && player.status === "alive");
@@ -222,6 +237,7 @@ export function phaseLabel(phase: Phase): string {
   return {
     lobby: "准备",
     wolf_discussion: "夜间 · 狼队密谈",
+    guard_action: "夜间 · 守卫守护",
     seer_action: "夜间 · 预言家查验",
     witch_action: "夜间 · 女巫决策",
     day_speech: "白天 · 依次发言",
@@ -235,6 +251,7 @@ function emptyNight(): GameState["night"] {
   return {
     wolfProposals: {},
     pendingDeaths: [],
+    guardResolved: false,
     witchResolved: false,
     witchSaveUsedThisNight: false
   };
@@ -305,18 +322,34 @@ function applyWolfProposal(state: GameState, actorSeatId: string, proposal: Wolf
   });
   const wolves = state.players.filter((player) => player.role === "werewolf" && player.status === "alive");
   if (wolves.every((player) => state.night.wolfProposals[player.seatId])) {
-    const ordered = wolves.toSorted((left, right) => left.seatId.localeCompare(right.seatId));
-    const first = state.night.wolfProposals[ordered[0]?.seatId ?? ""];
-    const second = state.night.wolfProposals[ordered[1]?.seatId ?? ""];
-    if (first && second) {
+    const ordered = wolves.toSorted((left, right) => seatNumber(left.seatId) - seatNumber(right.seatId));
+    const proposals = ordered.map((wolf) => state.night.wolfProposals[wolf.seatId]).filter((proposal): proposal is WolfProposal => Boolean(proposal));
+    const first = proposals[0];
+    if (first && proposals.length === ordered.length) {
+      const unanimous = proposals.every((proposal) => proposal.targetSeatId === first.targetSeatId);
       state.night.wolfKillTarget = first.targetSeatId;
       addEvent(state, "wolf.proposal", { kind: "role", role: "werewolf" }, {
         resolvedTargetSeatId: state.night.wolfKillTarget,
-        method: first.targetSeatId === second.targetSeatId ? "一致" : "座位号优先"
+        method: unanimous ? "一致" : "座位号优先"
       });
     }
-    transitionTo(state, "seer_action");
+    transitionTo(state, "guard_action");
   }
+}
+
+function seatNumber(seatId: string): number {
+  return Number.parseInt(seatId.replace("seat-", ""), 10);
+}
+
+function applyGuardProtect(state: GameState, actorSeatId: string, targetSeatId: string): void {
+  requirePhase(state, "guard_action");
+  const guard = requireRole(state, actorSeatId, "guard");
+  requireTarget(state, targetSeatId);
+  if (state.night.guardResolved) throw new EngineError("ACTION_ALREADY_USED", "本夜已经守护过");
+  state.night.guardTarget = targetSeatId;
+  state.night.guardResolved = true;
+  addEvent(state, "guard.result", { kind: "seat", seatId: guard.seatId }, { targetSeatId });
+  transitionTo(state, "seer_action");
 }
 
 function applySeerInspect(state: GameState, actorSeatId: string, targetSeatId: string): void {
@@ -365,6 +398,10 @@ function applyWitchResolve(
 }
 
 function applySystemSkip(state: GameState): void {
+  if (state.phase === "guard_action") {
+    transitionTo(state, "seer_action");
+    return;
+  }
   if (state.phase === "seer_action") {
     transitionTo(state, "witch_action");
     return;
@@ -386,7 +423,8 @@ function applySystemSkip(state: GameState): void {
 
 function resolveNight(state: GameState): void {
   state.night.pendingDeaths = [];
-  if (state.night.wolfKillTarget && !state.night.witchSaveUsedThisNight) {
+  const wolfKillBlocked = state.night.wolfKillTarget && state.night.guardTarget === state.night.wolfKillTarget;
+  if (state.night.wolfKillTarget && !state.night.witchSaveUsedThisNight && !wolfKillBlocked) {
     state.night.pendingDeaths.push({ seatId: state.night.wolfKillTarget, cause: "werewolf" });
   }
   if (state.night.witchPoisonTarget) {
@@ -532,6 +570,8 @@ function availableActions(state: GameState, humanSeatId: string): string[] {
   switch (state.phase) {
     case "wolf_discussion":
       return ["wolf.propose"];
+    case "guard_action":
+      return ["guard.protect"];
     case "seer_action":
       return ["seer.inspect"];
     case "witch_action":

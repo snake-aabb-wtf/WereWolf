@@ -261,6 +261,15 @@ export class GameManager {
       });
       return;
     }
+    if (phase === "guard_action") {
+      this.apply(runtime, {
+        requestId: randomUUID(),
+        type: "guard.protect",
+        actorSeatId,
+        payload: { targetSeatId: this.isLegalTarget(runtime.state, actorSeatId, action?.targetSeatId, true) ? action.targetSeatId : this.fallbackTarget(runtime.state, actorSeatId) }
+      });
+      return;
+    }
     if (phase === "witch_action") {
       this.apply(runtime, {
         requestId: randomUUID(),
@@ -285,11 +294,11 @@ export class GameManager {
     }
   }
 
-  private isLegalTarget(state: GameState, actorSeatId: string, targetSeatId: unknown): targetSeatId is string {
+  private isLegalTarget(state: GameState, actorSeatId: string, targetSeatId: unknown, allowSelf = false): targetSeatId is string {
     if (typeof targetSeatId !== "string") return false;
     const actor = getPlayer(state, actorSeatId);
     const target = state.players.find((player) => player.seatId === targetSeatId);
-    if (!target || target.status !== "alive" || target.seatId === actorSeatId) return false;
+    if (!target || target.status !== "alive" || (!allowSelf && target.seatId === actorSeatId)) return false;
     return actor.role !== "werewolf" || target.faction !== "werewolf";
   }
 
@@ -302,7 +311,9 @@ export class GameManager {
 
 function buildContext(state: GameState, seatId: string): AgentContext {
   const player = getPlayer(state, seatId);
-  const legalTargets = state.phase === "witch_action"
+  const legalTargets = state.phase === "guard_action"
+    ? state.players.filter((candidate) => candidate.status === "alive").map((candidate) => candidate.seatId)
+    : state.phase === "witch_action"
     ? state.players.filter((candidate) => candidate.status === "alive" && candidate.seatId !== seatId).map((candidate) => candidate.seatId)
     : state.phase === "day_speech"
       ? []
@@ -333,7 +344,7 @@ function agentKind(role: Role): AgentContext["kind"] {
 }
 
 function shouldSkip(phase: Phase): boolean {
-  return phase === "seer_action" || phase === "witch_action" || phase === "hunter_action" || phase === "day_speech";
+  return phase === "guard_action" || phase === "seer_action" || phase === "witch_action" || phase === "hunter_action" || phase === "day_speech";
 }
 
 function buildCommand(
@@ -347,6 +358,8 @@ function buildCommand(
       const value = payload as { targetSeatId?: unknown; message?: unknown };
       return { requestId, type, actorSeatId, payload: { targetSeatId: String(value.targetSeatId ?? ""), message: String(value.message ?? "") } };
     }
+    case "guard.protect":
+      return { requestId, type, actorSeatId, payload: { targetSeatId: String((payload as { targetSeatId?: unknown }).targetSeatId ?? "") } };
     case "seer.inspect":
       return { requestId, type, actorSeatId, payload: { targetSeatId: String((payload as { targetSeatId?: unknown }).targetSeatId ?? "") } };
     case "witch.resolve": {

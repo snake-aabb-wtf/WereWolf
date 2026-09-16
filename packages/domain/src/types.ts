@@ -1,4 +1,4 @@
-export type Role = "werewolf" | "seer" | "witch" | "hunter" | "villager";
+export type Role = "werewolf" | "seer" | "witch" | "hunter" | "guard" | "villager";
 export type Faction = "village" | "werewolf";
 export type PlayerKind = "human" | "ai";
 export type PlayerStatus = "alive" | "dead";
@@ -7,6 +7,7 @@ export type DeathCause = "werewolf" | "witch" | "vote" | "hunter";
 export type Phase =
   | "lobby"
   | "wolf_discussion"
+  | "guard_action"
   | "seer_action"
   | "witch_action"
   | "day_speech"
@@ -44,10 +45,12 @@ export interface PendingDeath {
 export interface NightState {
   wolfProposals: Record<string, WolfProposal>;
   wolfKillTarget?: string;
+  guardTarget?: string;
   pendingDeaths: PendingDeath[];
   activeHunterSeatId?: string;
   seerTarget?: string;
   seerResult?: Role;
+  guardResolved: boolean;
   witchResolved: boolean;
   witchSaveUsedThisNight: boolean;
   witchPoisonTarget?: string;
@@ -65,6 +68,7 @@ export interface GameEvent {
     | "game.started"
     | "phase.changed"
     | "wolf.proposal"
+    | "guard.result"
     | "seer.result"
     | "witch.result"
     | "speech.delta"
@@ -102,6 +106,12 @@ export type Command =
       type: "wolf.propose";
       actorSeatId: string;
       payload: WolfProposal;
+    }
+  | {
+      requestId: string;
+      type: "guard.protect";
+      actorSeatId: string;
+      payload: { targetSeatId: string };
     }
   | {
       requestId: string;

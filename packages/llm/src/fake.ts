@@ -15,6 +15,7 @@ export class FakeProvider implements AgentProvider {
     if (context.phase === "wolf_discussion") {
       return { speech, action: { type: "wolf.propose", targetSeatId: target, message: "先从公开票型里找出最不自然的人。" } };
     }
+    if (context.phase === "guard_action") return { speech, action: { type: "guard.protect", targetSeatId: target } };
     if (context.phase === "seer_action") return { speech, action: { type: "seer.inspect", targetSeatId: target } };
     if (context.phase === "witch_action") return { speech, action: { type: "witch.resolve", save: false, poisonTargetSeatId: null } };
     if (context.phase === "hunter_action") return { speech, action: { type: "hunter.shoot", targetSeatId: target } };

@@ -24,4 +24,9 @@ describe("FakeProvider", () => {
     expect(result.voteTargetSeatId).toBe("seat-2");
     expect(chunks.join("")).toBe(result.speech);
   });
+
+  it("returns a guard action for the guard phase", async () => {
+    const result = await new FakeProvider().generateTurn({ ...context, phase: "guard_action", role: "guard", kind: "guard", legalTargets: ["seat-1", "seat-2"] });
+    expect(result.action).toEqual({ type: "guard.protect", targetSeatId: "seat-1" });
+  });
 });
