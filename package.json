@@ -1,0 +1,28 @@
+{
+  "name": "werewolf-llm",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run build && concurrently \"node --env-file=.env apps/server/dist/index.js\" \"npm run dev --workspace @werewolf/web\"",
+    "dev:server": "npm run build --workspace @werewolf/domain && npm run build --workspace @werewolf/llm && npm run build --workspace @werewolf/server && node --env-file=.env apps/server/dist/index.js",
+    "dev:web": "npm run dev --workspace @werewolf/web",
+    "build": "npm run build --workspace @werewolf/domain && npm run build --workspace @werewolf/llm && npm run build --workspace @werewolf/server && npm run build --workspace @werewolf/web",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc -b packages/domain packages/llm apps/server apps/web"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.2.0",
+    "typescript": "^5.8.0",
+    "vitest": "^3.2.0"
+  }
+}
