@@ -8,6 +8,7 @@ const context: AgentContext = {
   phase: "day_vote",
   seatId: "seat-1",
   name: "测试玩家",
+  seatNameMap: { "seat-1": "测试玩家", "seat-2": "目标玩家" },
   role: "villager",
   personality: "冷静",
   visibleEvents: [],
@@ -23,6 +24,8 @@ describe("FakeProvider", () => {
     const result = await new FakeProvider().generateTurn(context, { onDelta: (chunk) => chunks.push(chunk) });
     expect(result.voteTargetSeatId).toBe("seat-2");
     expect(chunks.join("")).toBe(result.speech);
+    expect(result.speech).toContain("目标玩家");
+    expect(result.speech).not.toContain("seat-2");
   });
 
   it("returns a guard action for the guard phase", async () => {

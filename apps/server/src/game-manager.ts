@@ -403,6 +403,7 @@ function buildContext(state: GameState, seatId: string): AgentContext {
     phase: state.phase,
     seatId,
     name: player.name,
+    seatNameMap: Object.fromEntries(state.players.map((candidate) => [candidate.seatId, candidate.name])),
     role: player.role,
     personality: player.personality,
     visibleEvents: visibleEventsFor(state, seatId),

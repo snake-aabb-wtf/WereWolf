@@ -25,6 +25,7 @@ export class FakeProvider implements AgentProvider {
 
 function fakeSpeech(context: AgentContext): string {
   const prefix = context.kind === "wolf" ? "我先从票型看" : "我目前观察到";
-  const target = context.legalTargets[0] ?? "场上";
+  const targetSeatId = context.legalTargets[0];
+  const target = targetSeatId ? context.seatNameMap[targetSeatId] ?? targetSeatId : "场上";
   return `${prefix} ${target}，这只是基于当前公开信息的初步判断。`;
 }

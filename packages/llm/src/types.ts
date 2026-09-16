@@ -8,6 +8,8 @@ export interface AgentContext {
   phase: Phase;
   seatId: string;
   name: string;
+  /** Public, deterministic lookup table used to keep natural-language names aligned with engine seat IDs. */
+  seatNameMap: Record<string, string>;
   role: Role;
   personality: string;
   visibleEvents: GameEvent[];

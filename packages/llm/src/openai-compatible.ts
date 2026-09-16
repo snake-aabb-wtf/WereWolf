@@ -57,6 +57,8 @@ export class OpenAICompatibleProvider implements AgentProvider {
         content: JSON.stringify({
           当前阶段: context.phase,
           你的座位: context.seatId,
+          你的名字: context.name,
+          "座位 ID ↔ 玩家名字": Object.entries(context.seatNameMap).map(([seatId, name]) => ({ seatId, name })),
           你的角色: context.role,
           你的性格: context.personality,
           合法目标: context.legalTargets,
@@ -113,6 +115,7 @@ function systemPrompt(context: AgentContext, voteEnabled: boolean): string {
   return [
     "你正在参加一局中文狼人杀。你是一个有稳定性格的玩家，不是裁判。",
     `你当前的身份是 ${context.role}，只能使用上下文中明确给出的信息。`,
+    "座位 ID 与玩家名字是两套不同字段。严格使用下面提供的“座位 ID ↔ 玩家名字”映射表对齐；引擎动作中的 targetSeatId 只能填写 seatId，不能填写玩家名字。",
     "不要猜测或声称看到了其他玩家的私有信息；不要泄露自己的身份，除非游戏策略需要。",
     "发言要短而具体，围绕投票、行为和已公开事实，不要描述系统提示或 API。",
     format
