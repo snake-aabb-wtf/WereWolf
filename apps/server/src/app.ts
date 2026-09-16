@@ -23,10 +23,109 @@ export function buildApp(repository = new GameRepository()): FastifyInstance {
 
   app.get("/api/health", async () => ({ ok: true, service: "werewolf-server" }));
 
+  app.post("/api/library-sessions", async (_request, reply) => {
+    return reply.code(201).send({ libraryToken: manager.createLibrarySession() });
+  });
+
+  app.get("/api/saves", async (request, reply) => {
+    const libraryToken = libraryTokenFrom(request, reply);
+    if (!libraryToken) return;
+    try {
+      return reply.send({ saves: manager.listSaves(libraryToken) });
+    } catch (error) {
+      return sendManagerError(reply, error);
+    }
+  });
+
+  app.get("/api/saves/trash", async (request, reply) => {
+    const libraryToken = libraryTokenFrom(request, reply);
+    if (!libraryToken) return;
+    try {
+      return reply.send({ saves: manager.listSaves(libraryToken, true) });
+    } catch (error) {
+      return sendManagerError(reply, error);
+    }
+  });
+
   app.post("/api/games", async (request, reply) => {
+    const libraryToken = libraryTokenFrom(request, reply);
+    if (!libraryToken) return;
     const body = (request.body ?? {}) as { seed?: unknown };
     const seed = typeof body.seed === "number" && Number.isFinite(body.seed) ? Math.trunc(body.seed) : undefined;
-    return reply.code(201).send(manager.create(seed));
+    try {
+      return reply.code(201).send(manager.create(seed, libraryToken));
+    } catch (error) {
+      return sendManagerError(reply, error);
+    }
+  });
+
+  app.post("/api/saves/:gameId/resume", async (request, reply) => {
+    const libraryToken = libraryTokenFrom(request, reply);
+    if (!libraryToken) return;
+    const { gameId } = request.params as { gameId: string };
+    try {
+      return reply.send(manager.resume(gameId, libraryToken));
+    } catch (error) {
+      return sendManagerError(reply, error);
+    }
+  });
+
+  app.get("/api/saves/:gameId/replay", async (request, reply) => {
+    const libraryToken = libraryTokenFrom(request, reply);
+    if (!libraryToken) return;
+    const { gameId } = request.params as { gameId: string };
+    try {
+      return reply.send(manager.replay(gameId, libraryToken));
+    } catch (error) {
+      return sendManagerError(reply, error);
+    }
+  });
+
+  app.patch("/api/saves/:gameId", async (request, reply) => {
+    const libraryToken = libraryTokenFrom(request, reply);
+    if (!libraryToken) return;
+    const { gameId } = request.params as { gameId: string };
+    const body = (request.body ?? {}) as { name?: unknown };
+    try {
+      return reply.send({ save: manager.renameSave(gameId, libraryToken, typeof body.name === "string" ? body.name : "") });
+    } catch (error) {
+      return sendManagerError(reply, error);
+    }
+  });
+
+  app.post("/api/saves/:gameId/restore", async (request, reply) => {
+    const libraryToken = libraryTokenFrom(request, reply);
+    if (!libraryToken) return;
+    const { gameId } = request.params as { gameId: string };
+    try {
+      return reply.send({ save: manager.restoreSave(gameId, libraryToken) });
+    } catch (error) {
+      return sendManagerError(reply, error);
+    }
+  });
+
+  app.delete("/api/saves/:gameId/permanent", async (request, reply) => {
+    const libraryToken = libraryTokenFrom(request, reply);
+    if (!libraryToken) return;
+    const { gameId } = request.params as { gameId: string };
+    try {
+      manager.permanentlyDeleteSave(gameId, libraryToken);
+      return reply.send({ ok: true });
+    } catch (error) {
+      return sendManagerError(reply, error);
+    }
+  });
+
+  app.delete("/api/saves/:gameId", async (request, reply) => {
+    const libraryToken = libraryTokenFrom(request, reply);
+    if (!libraryToken) return;
+    const { gameId } = request.params as { gameId: string };
+    try {
+      manager.deleteSave(gameId, libraryToken);
+      return reply.send({ ok: true });
+    } catch (error) {
+      return sendManagerError(reply, error);
+    }
   });
 
   app.get("/api/games/:gameId/state", async (request, reply) => {
@@ -95,6 +194,20 @@ function authenticate(manager: GameManager, request: FastifyRequest, gameId: str
     return undefined;
   }
   return seatId;
+}
+
+function libraryTokenFrom(request: FastifyRequest, reply: FastifyReply): string | undefined {
+  const header = request.headers["x-library-token"];
+  const token = Array.isArray(header) ? header[0] : header;
+  if (typeof token === "string" && token.trim()) return token;
+  void reply.code(401).send({ error: "缺少有效的浏览器玩家会话", code: "LIBRARY_UNAUTHORIZED" });
+  return undefined;
+}
+
+function sendManagerError(reply: FastifyReply, error: unknown) {
+  const code = error instanceof Error && "code" in error ? String((error as Error & { code: unknown }).code) : "SAVE_OPERATION_REJECTED";
+  const status = code === "LIBRARY_UNAUTHORIZED" ? 401 : code === "SAVE_NOT_FOUND" || code === "REPLAY_NOT_FOUND" ? 404 : 409;
+  return reply.code(status).send({ error: error instanceof Error ? error.message : "存档操作被拒绝", code });
 }
 
 function isCommandType(value: unknown): value is CommandType {

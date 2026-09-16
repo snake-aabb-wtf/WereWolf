@@ -3,6 +3,7 @@ export type Faction = "village" | "werewolf";
 export type PlayerKind = "human" | "ai";
 export type PlayerStatus = "alive" | "dead";
 export type DeathCause = "werewolf" | "witch" | "vote" | "hunter";
+export type SaveStatus = "in_progress" | "completed";
 
 export type Phase =
   | "lobby"
@@ -176,6 +177,29 @@ export interface PublicState {
     availableActions: string[];
   };
   winner?: Faction;
+}
+
+export interface SaveSummary {
+  gameId: string;
+  name: string;
+  status: SaveStatus;
+  round: number;
+  phase: Phase;
+  playerCount: number;
+  aliveCount: number;
+  winner?: Faction;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
+export interface ReplayState {
+  gameId: string;
+  name: string;
+  round: number;
+  winner: Faction;
+  players: PlayerState[];
+  events: GameEvent[];
 }
 
 export interface CreateGameOptions {

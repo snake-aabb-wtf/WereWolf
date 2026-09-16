@@ -12,7 +12,9 @@ import {
   type GameEvent,
   type GameState,
   type Phase,
-  type Role
+  type ReplayState,
+  type Role,
+  type SaveSummary
 } from "@werewolf/domain";
 import {
   FakeProvider,
@@ -50,23 +52,89 @@ export class GameManager {
       : this.fallback;
   }
 
-  create(seed?: number): { gameId: string; playerToken: string; humanSeatId: string; state: ReturnType<typeof toPublicState> } {
+  create(seed: number | undefined, libraryToken: string): { gameId: string; playerToken: string; humanSeatId: string; state: ReturnType<typeof toPublicState>; save: SaveSummary } {
+    this.requireLibrarySession(libraryToken);
     const gameId = randomUUID();
     const humanSeatId = "seat-1";
     const state = seed === undefined
       ? createGame({ gameId, humanSeatId })
       : createGame({ gameId, seed, humanSeatId });
-    this.repository.createGame(state);
+    const saveName = defaultSaveName(this.repository.nextGameNumber(libraryToken));
+    this.repository.createGame(state, libraryToken, saveName);
     const playerToken = this.repository.createSession(gameId, humanSeatId);
-    this.runtimes.set(gameId, {
+    const runtime: Runtime = {
       state,
       humanSeatId,
       listeners: new Set(),
       driving: false,
       aiBusy: false
-    });
+    };
+    this.runtimes.set(gameId, runtime);
     void this.drive(gameId);
-    return { gameId, playerToken, humanSeatId, state: toPublicState(state, humanSeatId) };
+    return { gameId, playerToken, humanSeatId, state: toPublicState(state, humanSeatId), save: this.repository.getSaveSummary(gameId, libraryToken)! };
+  }
+
+  createLibrarySession(): string {
+    return this.repository.createLibrarySession();
+  }
+
+  listSaves(libraryToken: string, includeDeleted = false): SaveSummary[] {
+    this.requireLibrarySession(libraryToken);
+    return this.repository.listSaves(libraryToken, includeDeleted);
+  }
+
+  resume(gameId: string, libraryToken: string): { gameId: string; playerToken: string; humanSeatId: string; state: ReturnType<typeof toPublicState>; save: SaveSummary } {
+    this.requireLibrarySession(libraryToken);
+    const state = this.repository.loadOwnedGame(gameId, libraryToken);
+    if (!state) throw managerError("SAVE_NOT_FOUND", "找不到可继续的存档");
+    if (state.winner) throw managerError("SAVE_COMPLETED", "已结束的存档只能复盘");
+    const runtime = this.runtimes.get(gameId) ?? this.createRuntime(state);
+    this.repository.saveState(runtime.state);
+    const playerToken = this.repository.createSession(gameId, runtime.humanSeatId);
+    void this.drive(gameId);
+    return {
+      gameId,
+      playerToken,
+      humanSeatId: runtime.humanSeatId,
+      state: toPublicState(runtime.state, runtime.humanSeatId),
+      save: this.repository.getSaveSummary(gameId, libraryToken)!
+    };
+  }
+
+  replay(gameId: string, libraryToken: string): ReplayState {
+    this.requireLibrarySession(libraryToken);
+    const summary = this.repository.getSaveSummary(gameId, libraryToken);
+    if (!summary) throw managerError("SAVE_NOT_FOUND", "找不到存档");
+    if (summary.status !== "completed") throw managerError("SAVE_NOT_COMPLETED", "进行中的存档不能复盘");
+    const replay = this.repository.getReplay(gameId, libraryToken);
+    if (!replay) throw managerError("REPLAY_NOT_FOUND", "找不到复盘记录");
+    return replay;
+  }
+
+  renameSave(gameId: string, libraryToken: string, name: string): SaveSummary {
+    this.requireLibrarySession(libraryToken);
+    const summary = this.repository.renameSave(gameId, libraryToken, name);
+    if (!summary) throw managerError("SAVE_NOT_FOUND", "找不到可重命名的存档");
+    return summary;
+  }
+
+  deleteSave(gameId: string, libraryToken: string): void {
+    this.requireLibrarySession(libraryToken);
+    if (!this.repository.softDelete(gameId, libraryToken)) throw managerError("SAVE_NOT_FOUND", "找不到可删除的存档");
+  }
+
+  restoreSave(gameId: string, libraryToken: string): SaveSummary {
+    this.requireLibrarySession(libraryToken);
+    if (!this.repository.restoreSave(gameId, libraryToken)) throw managerError("SAVE_NOT_FOUND", "找不到回收站存档");
+    const summary = this.repository.getSaveSummary(gameId, libraryToken);
+    if (!summary) throw managerError("SAVE_NOT_FOUND", "存档恢复失败");
+    return summary;
+  }
+
+  permanentlyDeleteSave(gameId: string, libraryToken: string): void {
+    this.requireLibrarySession(libraryToken);
+    if (!this.repository.permanentlyDelete(gameId, libraryToken)) throw managerError("SAVE_NOT_FOUND", "找不到可永久删除的回收站存档");
+    this.runtimes.delete(gameId);
   }
 
   authenticate(gameId: string, token: string): string | undefined {
@@ -111,6 +179,10 @@ export class GameManager {
     if (existing) return existing;
     const state = this.repository.loadGame(gameId);
     if (!state) throw new Error("游戏不存在");
+    return this.createRuntime(state);
+  }
+
+  private createRuntime(state: GameState): Runtime {
     const runtime: Runtime = {
       state,
       humanSeatId: getHumanPlayer(state).seatId,
@@ -118,8 +190,12 @@ export class GameManager {
       driving: false,
       aiBusy: false
     };
-    this.runtimes.set(gameId, runtime);
+    this.runtimes.set(state.gameId, runtime);
     return runtime;
+  }
+
+  private requireLibrarySession(token: string): void {
+    if (!token || !this.repository.touchLibrarySession(token)) throw managerError("LIBRARY_UNAUTHORIZED", "缺少有效的浏览器玩家会话");
   }
 
   private apply(runtime: Runtime, command: Command): void {
@@ -375,4 +451,23 @@ function buildCommand(
       return { requestId, type, actorSeatId, payload: { targetSeatId: typeof value.targetSeatId === "string" ? value.targetSeatId : null } };
     }
   }
+}
+
+function defaultSaveName(sequence: number): string {
+  const now = new Date();
+  const timestamp = [
+    now.getFullYear().toString().padStart(4, "0"),
+    (now.getMonth() + 1).toString().padStart(2, "0"),
+    now.getDate().toString().padStart(2, "0")
+  ].join("-") + " " + [
+    now.getHours().toString().padStart(2, "0"),
+    now.getMinutes().toString().padStart(2, "0")
+  ].join(":");
+  return `暗桌 #${sequence} · ${timestamp}`;
+}
+
+function managerError(code: string, message: string): Error & { code: string } {
+  const error = new Error(message) as Error & { code: string };
+  error.code = code;
+  return error;
 }

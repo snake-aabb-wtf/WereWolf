@@ -23,7 +23,16 @@ npm run dev
 - `packages/domain`：纯 TypeScript 游戏规则引擎与共享类型。
 - `packages/llm`：OpenAI Chat Completions 兼容 API 适配层和 Fake Provider。
 - `apps/server`：Fastify API、SSE、SQLite 持久化和 AI 回合调度。
-- `apps/web`：React + Vite 游戏桌面。
+- `apps/web`：React + Vite 主菜单、进行中牌局、只读复盘和回收站界面；存档按匿名浏览器会话隔离并自动保存。
+
+## 页面与存档
+
+- `/`：存档库主菜单，可创建多局牌局、继续进行中牌局、重命名或移入回收站。
+- `/game/:gameId`：进行中的牌局，离开页面后可从主菜单继续。
+- `/replay/:gameId`：已结束牌局的只读完整复盘，包含身份和隐藏事件。
+- `/trash`：软删除存档的恢复和永久删除入口。
+
+首次打开页面会由服务端签发匿名浏览器令牌，浏览器只在 `localStorage` 保存令牌本身，SQLite 只保存其哈希。每次新建牌局、领域状态变化和 AI 发言都会更新对应快照。
 
 ## 验证
 
