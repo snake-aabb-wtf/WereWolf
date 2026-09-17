@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { PublicState } from "@werewolf/domain";
 import { ActionPanel } from "./ActionPanel";
@@ -6,20 +6,25 @@ import { ConversationTimeline } from "./ConversationTimeline";
 import { phaseNames } from "./game-data";
 import { GameTable } from "./GameTable";
 import { IdentityCard } from "./IdentityCard";
+import { IdentityReveal } from "./IdentityReveal";
 import { useGameSession } from "../hooks/useGameSession";
 
 export function GamePage({ libraryToken }: { libraryToken: string }) {
   const { gameId = "" } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const initialPlayerToken = (location.state as { playerToken?: string } | null)?.playerToken;
+  const routeState = location.state as { playerToken?: string; showIdentityReveal?: boolean } | null;
+  const initialPlayerToken = routeState?.playerToken;
   const session = useGameSession(gameId, libraryToken, initialPlayerToken);
+  const [showIdentityReveal, setShowIdentityReveal] = useState(() => routeState?.showIdentityReveal === true);
   const [target, setTarget] = useState("");
   const [speech, setSpeech] = useState("");
   const [witchChoice, setWitchChoice] = useState<"none" | "save" | "poison">("none");
+  const completeIdentityReveal = useCallback(() => setShowIdentityReveal(false), []);
 
   const streaming = useMemo(() => collectStreaming(session.game?.events ?? []), [session.game?.events]);
   if (!session.game) return <LoadingPage error={session.error} />;
+  if (showIdentityReveal) return <IdentityReveal game={session.game} onComplete={completeIdentityReveal} />;
 
   const game = session.game;
   const canAct = game.human.canAct && !session.loading;

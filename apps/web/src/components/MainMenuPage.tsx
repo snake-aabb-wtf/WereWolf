@@ -45,7 +45,7 @@ export function MainMenuPage({ libraryToken, renewLibraryToken }: { libraryToken
     setError("");
     try {
       const created = await gameApi.create(libraryToken);
-      navigate(`/game/${created.gameId}`, { state: { playerToken: created.playerToken } });
+      navigate(`/game/${created.gameId}`, { state: { playerToken: created.playerToken, showIdentityReveal: true } });
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "创建游戏失败");
     } finally {
